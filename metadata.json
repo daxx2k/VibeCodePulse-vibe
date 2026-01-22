@@ -1,0 +1,7 @@
+{
+  "name": "Vibe Code Pulse",
+  "description": "A comprehensive news aggregator for everything Vibe Coding, leveraging Gemini-powered Google Search to collate updates from social media, GitHub, and official channels.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
