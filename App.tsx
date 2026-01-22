@@ -28,9 +28,11 @@ const App: React.FC = () => {
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [briefing, setBriefing] = useState<{ title: string; content: string; alert?: boolean }[]>([]);
   const [isBriefingLoading, setIsBriefingLoading] = useState(false);
+  
+  // Selection/Explanation States
   const [selection, setSelection] = useState<{ text: string; x: number; y: number } | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isExplanationLoading, setIsExplanationLoading] = useState(false);
 
   const [favorites, setFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem('vibe-favs');
@@ -54,7 +56,8 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleMouseUp = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest('.ai-tooltip')) return;
+      // Don't clear if clicking inside the tooltip or a button
+      if (target.closest('.ai-tooltip') || target.closest('button')) return;
 
       const sel = window.getSelection();
       const text = sel?.toString().trim();
@@ -65,12 +68,12 @@ const App: React.FC = () => {
         if (rect) {
           setSelection({ text, x: rect.left + rect.width / 2, y: rect.top + window.scrollY });
           setExplanation(null);
+          setIsExplanationLoading(false);
         }
       } else {
-        if (!target.closest('button')) {
-          setSelection(null);
-          setExplanation(null);
-        }
+        setSelection(null);
+        setExplanation(null);
+        setIsExplanationLoading(false);
       }
     };
     window.addEventListener('mouseup', handleMouseUp);
@@ -80,7 +83,6 @@ const App: React.FC = () => {
   const loadNews = useCallback(async (toolOverride?: ToolType, catOverride?: Category) => {
     setIsRefreshing(true);
     setLoadingProgress(15);
-    setFetchError(null);
     const syncTool = toolOverride || activeTool;
     const syncCat = catOverride || activeCategory;
     
@@ -105,7 +107,6 @@ const App: React.FC = () => {
       }
       setLoading(false);
     } catch (err) {
-      setFetchError("Sync engine overloaded. Retrying...");
       setLoading(false);
     } finally {
       clearInterval(pInt);
@@ -164,6 +165,16 @@ const App: React.FC = () => {
   }, [activeTool, activeCategory, filteredNews, news]);
 
   useEffect(() => { if (news.length === 0) loadNews(); }, []);
+
+  const handleExplain = async (text: string) => {
+    setIsExplanationLoading(true);
+    try {
+      const result = await explainWord(text, "");
+      setExplanation(result);
+    } finally {
+      setIsExplanationLoading(false);
+    }
+  };
 
   const isTargeted = activeTool !== 'All Tools' || activeCategory !== 'All';
 
@@ -322,29 +333,54 @@ const App: React.FC = () => {
 
       {showHowItWorks && <HowItWorks onClose={() => setShowHowItWorks(false)} />}
 
+      {/* REFINED AI INTELLIGENCE TOOLTIP */}
       {selection && (
         <div 
-          className="ai-tooltip bg-slate-900 border border-slate-700 p-4 rounded-xl shadow-2xl fixed z-[500] text-white min-w-[200px] max-w-[340px] animate-in fade-in zoom-in-95" 
-          style={{ left: selection.x, top: selection.y, transform: 'translateX(-50%) translateY(-120%)' }}
+          className="ai-tooltip bg-[var(--card-bg)] border border-[var(--border)] shadow-2xl backdrop-blur-xl fixed z-[500] text-[var(--text)] min-w-[240px] max-w-[340px] animate-in fade-in slide-in-from-bottom-2 duration-300 rounded-xl overflow-hidden" 
+          style={{ left: selection.x, top: selection.y, transform: 'translateX(-50%) translateY(-110%)' }}
         >
-          {explanation ? (
-            <div className="space-y-2">
-              <p className="text-[9px] font-bold text-cyan-400 uppercase tracking-widest">Intelligence Layer:</p>
-              <p className="text-[12px] font-sans leading-relaxed text-slate-200">{explanation}</p>
-            </div>
-          ) : (
-            <button 
-              onClick={async (e) => {
-                e.preventDefault(); e.stopPropagation();
-                setExplanation(await explainWord(selection.text, ""));
-              }} 
-              className="w-full text-left font-sans text-[12px] font-bold hover:text-cyan-400 flex items-center justify-between gap-4 py-1"
-            >
-              <span>Explain "{selection.text}"</span>
-              <svg className="w-4 h-4 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-            </button>
-          )}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[10px] border-transparent border-t-slate-900" />
+          <div className="h-1 w-full bg-cyan-600 dark:bg-cyan-500" />
+          
+          <div className="p-4">
+            {isExplanationLoading ? (
+              <div className="flex flex-col items-center justify-center py-6 gap-3">
+                <svg className="w-8 h-8 text-cyan-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-600 animate-pulse">Inquiry Protocol Active</p>
+              </div>
+            ) : explanation ? (
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between border-b border-[var(--border)] pb-2 mb-2">
+                   <p className="text-[9px] font-black text-cyan-600 dark:text-cyan-500 uppercase tracking-widest">Intelligence Report</p>
+                   <button onClick={() => setSelection(null)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
+                   </button>
+                </div>
+                <p className="text-[12px] font-sans leading-relaxed text-slate-800 dark:text-slate-200 font-medium">{explanation}</p>
+                <div className="pt-2">
+                   <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase font-bold">Ref: "{selection.text}"</span>
+                </div>
+              </div>
+            ) : (
+              <button 
+                onClick={() => handleExplain(selection.text)} 
+                className="w-full flex items-center justify-between gap-4 p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50 hover:bg-cyan-600/10 transition-colors group"
+              >
+                <div className="flex flex-col text-left">
+                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest group-hover:text-cyan-600 transition-colors">Explain</span>
+                  <span className="text-[12px] font-bold text-slate-900 dark:text-slate-100 truncate max-w-[180px]">"{selection.text}"</span>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-cyan-600/10 flex items-center justify-center text-cyan-600 group-hover:bg-cyan-600 group-hover:text-white transition-all">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                </div>
+              </button>
+            )}
+          </div>
+          
+          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[10px] border-transparent border-t-[var(--border)]" />
+          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[9px] border-transparent border-t-[var(--card-bg)] -translate-y-[1px]" />
         </div>
       )}
     </div>
