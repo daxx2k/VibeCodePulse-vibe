@@ -87,30 +87,34 @@ export async function fetchAIDevNews(targetTool?: string, targetCategory?: strin
   });
 }
 
-export async function generatePulseBriefing(items: NewsItem[], toolContext: string, categoryContext: string): Promise<{ title: string; content: string; alert?: boolean }[]> {
+export async function generatePulseBriefing(items: NewsItem[], toolContext: string, categoryContext: string): Promise<{ title: string; content: string; url?: string; alert?: boolean }[]> {
   if (items.length === 0) return [];
   
   return withRetry(async () => {
-    const contextStr = items.slice(0, 12).map(i => `[${i.platform}] ${i.title}`).join('\n');
+    // Provide source list to the model so it can pick the most relevant URL for each point
+    const contextStr = items.slice(0, 15).map((i, idx) => `ID:${idx} | [${i.platform}] ${i.title} | URL: ${i.url}`).join('\n');
+    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Analyze these signals for ${toolContext} (${categoryContext}):\n${contextStr}\n\nSummarize the current "vibe" into 3 distinct points.
+      contents: `Analyze these news signals for ${toolContext} (${categoryContext}):\n${contextStr}\n\nSummarize the current "vibe" into 3 distinct points.
+      For each point, identify the most relevant URL from the provided signals to serve as a deep-link.
       
       FORMAT (Exactly 3 lines):
-      PULSE || Headline || Short Insight || (Optional: alert)`,
+      PULSE || Headline || Short Insight || Exact Source URL || (Optional: alert)`,
     });
     
-    const results: { title: string; content: string; alert?: boolean }[] = [];
+    const results: { title: string; content: string; url?: string; alert?: boolean }[] = [];
     const lines = (response.text || "").split('\n');
     
     for (const line of lines) {
       if (line.includes('PULSE ||')) {
         const parts = line.split('||');
-        if (parts.length >= 3) {
+        if (parts.length >= 4) {
           results.push({
             title: parts[1].trim(),
             content: parts[2].trim(),
-            alert: parts[3]?.toLowerCase().includes('alert')
+            url: parts[3].trim().startsWith('http') ? parts[3].trim() : undefined,
+            alert: parts[4]?.toLowerCase().includes('alert')
           });
         }
       }

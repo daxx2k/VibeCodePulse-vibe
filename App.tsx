@@ -26,7 +26,7 @@ const App: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<NewsItem | null>(null);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
-  const [briefing, setBriefing] = useState<{ title: string; content: string; alert?: boolean }[]>([]);
+  const [briefing, setBriefing] = useState<{ title: string; content: string; url?: string; alert?: boolean }[]>([]);
   const [isBriefingLoading, setIsBriefingLoading] = useState(false);
   
   // Selection/Explanation States
@@ -260,16 +260,31 @@ const App: React.FC = () => {
               ) : briefing.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-12 animate-in fade-in duration-500">
                   {briefing.map((item, idx) => (
-                    <div key={idx} className="relative group">
+                    <div key={idx} className="relative group flex flex-col h-full">
                       <div className="flex items-center gap-2 mb-3">
                         <div className={`w-1.5 h-4 rounded-full ${item.alert ? 'bg-rose-600 animate-pulse' : 'bg-cyan-600'}`} />
                         <h4 className={`text-[11px] font-bold uppercase tracking-wide ${item.alert ? 'text-rose-700 dark:text-rose-400' : 'text-slate-900 dark:text-slate-100'}`}>
                           {item.title}
                         </h4>
                       </div>
-                      <p className="text-[13px] text-slate-700 dark:text-slate-400 font-medium leading-relaxed border-l-2 border-[var(--border)] pl-4 group-hover:border-cyan-500 transition-colors">
+                      <p className="text-[13px] text-slate-700 dark:text-slate-400 font-medium leading-relaxed border-l-2 border-[var(--border)] pl-4 group-hover:border-cyan-500 transition-colors mb-4 flex-grow">
                         {item.content}
                       </p>
+                      {item.url && (
+                        <div className="pl-4">
+                          <a 
+                            href={item.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 text-[10px] font-mono font-black text-cyan-600 dark:text-cyan-500 uppercase tracking-widest hover:text-cyan-700 dark:hover:text-cyan-400 transition-colors"
+                          >
+                            <span>Source Signal</span>
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
