@@ -49,7 +49,7 @@ const App: React.FC = () => {
     localStorage.setItem('vibe-theme', theme);
   }, [theme]);
 
-  // Handle word selection logic for AI Context
+  // Persistent word selection logic
   useEffect(() => {
     const handleMouseUp = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -83,9 +83,9 @@ const App: React.FC = () => {
     const syncTool = toolOverride || activeTool;
     const syncCat = catOverride || activeCategory;
     
-    setLoadingStatus(`Syncing ${syncTool === 'All Tools' ? 'Ecosystem' : syncTool}...`);
+    setLoadingStatus(`Crawl Depth Increased: Syncing ${syncTool === 'All Tools' ? 'Ecosystem' : syncTool}...`);
     
-    const pInt = setInterval(() => setLoadingProgress(p => p < 90 ? p + 1 : p), 600);
+    const pInt = setInterval(() => setLoadingProgress(p => p < 90 ? p + 1 : p), 800);
     
     try {
       const data = await fetchAIDevNews(syncTool, syncCat);
@@ -104,7 +104,7 @@ const App: React.FC = () => {
       }
       setLoading(false);
     } catch (err) {
-      setFetchError("Sync failed. Check connection.");
+      setFetchError("Sync engine overloaded. Retrying...");
       setLoading(false);
     } finally {
       clearInterval(pInt);
@@ -137,7 +137,7 @@ const App: React.FC = () => {
     return result.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
   }, [news, activeCategory, activeTool, activePlatform, favorites, searchQuery, timeFilter]);
 
-  // Update briefing when filters or news change
+  // Dynamic briefing update
   useEffect(() => {
     if (filteredNews.length > 0) {
       const toolLabel = activeTool === 'All Tools' ? "Global Ecosystem" : activeTool;
@@ -174,7 +174,7 @@ const App: React.FC = () => {
              <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
                 <span className="font-sans text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Sync Mode: <span className="text-slate-900 dark:text-slate-100">{isRefreshing ? 'Crawling...' : isTargeted ? 'Targeted' : 'Global'}</span>
+                  Engine: <span className="text-slate-900 dark:text-slate-100">{isRefreshing ? 'Deep Crawling...' : isTargeted ? 'Targeted' : 'Global'}</span>
                 </span>
              </div>
              
@@ -211,7 +211,7 @@ const App: React.FC = () => {
               <div className="mb-10 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-6 shadow-xl dark:shadow-2xl animate-in fade-in slide-in-from-top-4 duration-500">
                 <div className="flex items-center justify-between mb-8 border-b border-[var(--border)] pb-4">
                   <p className="font-sans text-[11px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-widest">
-                    Vibe Briefing: {activeTool !== 'All Tools' ? activeTool : 'Ecosystem'} ({activeCategory})
+                    Vibe Briefing: {activeTool !== 'All Tools' ? activeTool : 'Ecosystem'} — Context: {activeCategory}
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
@@ -258,8 +258,8 @@ const App: React.FC = () => {
                 ) : (
                   <div className="py-32 flex flex-col items-center justify-center max-w-lg mx-auto text-center">
                     <h3 className="text-slate-900 dark:text-slate-100 font-bold text-xl mb-4">No Signals Detected</h3>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm mb-10">Try a targeted sync for {activeTool === 'All Tools' ? 'this filter' : activeTool}.</p>
-                    <button onClick={() => loadNews()} className="px-12 py-3 bg-cyan-600 text-white rounded-lg font-bold uppercase text-[11px]">Sync Now</button>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm mb-10">Try a targeted deep sync for {activeTool === 'All Tools' ? 'this context' : activeTool}.</p>
+                    <button onClick={() => loadNews()} className="px-12 py-3 bg-cyan-600 text-white rounded-lg font-bold uppercase text-[11px]">Initiate Sync</button>
                   </div>
                 )}
               </>

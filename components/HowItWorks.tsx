@@ -28,7 +28,7 @@ const HowItWorks: React.FC<HowItWorksProps> = ({ onClose }) => {
               <h3 className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">01. Grounding Engine</h3>
             </div>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed pl-11">
-              VibeCodePulse uses the <strong>Gemini-3-Flash</strong> model with <strong>Google Search Grounding</strong>. Unlike traditional RSS, it live-crawls Reddit, X, GitHub, and social platforms using high-intensity site operators.
+              VibeCodePulse uses <strong>Gemini-3-Flash</strong> with <strong>Google Search Grounding</strong>. It performs real-time crawls of GitHub, Reddit, and X to find signals that traditional RSS feeds miss.
             </p>
           </section>
 
@@ -37,29 +37,29 @@ const HowItWorks: React.FC<HowItWorksProps> = ({ onClose }) => {
               <div className="w-8 h-8 rounded-lg bg-emerald-600/10 flex items-center justify-center text-emerald-600">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
               </div>
-              <h3 className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">02. Intelligence Layer</h3>
+              <h3 className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">02. Security & Privacy</h3>
             </div>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed pl-11">
-              Every card is synthesized by AI. Deterministic ID generation based on source URLs ensures that your "Favorites" and "New" badges remain consistent even after you refresh or sync the engine.
+              API Keys are managed via <strong>Environment Variables</strong> and are never hardcoded. In production, this architecture supports backend-proxying to ensure your credentials remain invisible to the client-side.
             </p>
           </section>
 
           <section>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-amber-600/10 flex items-center justify-center text-amber-600">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <div className="w-8 h-8 rounded-lg bg-indigo-600/10 flex items-center justify-center text-indigo-600">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
               </div>
-              <h3 className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">03. Persistence & Merging</h3>
+              <h3 className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">03. Targeted Deep Sync</h3>
             </div>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed pl-11">
-              VibeCodePulse doesn't just replace the feed; it <strong>merges</strong> new data with your local history. This builds a permanent archive of developer tool telemetry that persists across sessions.
+              Switching filters to a specific tool (like <strong>Claude Code</strong>) triggers a "Deep Sync." The AI modifies its search intent to hunt for niche bug reports, experimental gists, and advanced community tutorials.
             </p>
           </section>
 
           <div className="p-6 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-100 dark:border-slate-800">
              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Pro Tip</p>
              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed italic">
-               Try highlighting any technical term on a card. An intelligence tooltip will appear, allowing you to request an AI-powered contextual definition.
+               The "Vibe Briefing" at the top of the feed is context-aware. It will summarize the current "pulse" of exactly what you have filtered in the sidebar.
              </p>
           </div>
         </div>
