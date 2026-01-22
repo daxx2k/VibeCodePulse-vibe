@@ -13,7 +13,7 @@ const App: React.FC = () => {
   const [activePlatform, setActivePlatform] = useState<PlatformType>(() => (localStorage.getItem('pulse-pref-plat') as PlatformType) || 'All Platforms');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(() => (localStorage.getItem('pulse-pref-time') as TimeFilter) || 'all');
   
-  const [news, setNews] = useState<NewsItem[]>(() => {
+  const [news, setNews] = useState<(NewsItem & { isNew?: boolean })[]>(() => {
     const cached = localStorage.getItem('vibe-news-history');
     return cached ? JSON.parse(cached) : [];
   });
@@ -27,6 +27,7 @@ const App: React.FC = () => {
   const [selectedItem, setSelectedItem] = useState<NewsItem | null>(null);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [briefing, setBriefing] = useState<{ title: string; content: string; alert?: boolean }[]>([]);
+  const [isBriefingLoading, setIsBriefingLoading] = useState(false);
   const [selection, setSelection] = useState<{ text: string; x: number; y: number } | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -134,18 +135,32 @@ const App: React.FC = () => {
         return true;
       });
     }
-    return result.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+    return result.sort((a, b) => {
+      if (a.isNew && !b.isNew) return -1;
+      if (!a.isNew && b.isNew) return 1;
+      return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+    });
   }, [news, activeCategory, activeTool, activePlatform, favorites, searchQuery, timeFilter]);
 
   // Dynamic briefing update
   useEffect(() => {
-    if (filteredNews.length > 0) {
+    const triggerBriefing = async () => {
+      setIsBriefingLoading(true);
       const toolLabel = activeTool === 'All Tools' ? "Global Ecosystem" : activeTool;
       const catLabel = activeCategory === 'All' ? "All Categories" : activeCategory;
-      generatePulseBriefing(filteredNews, toolLabel, catLabel).then(setBriefing);
-    } else if (news.length > 0 && activeTool === 'All Tools' && activeCategory === 'All') {
-       generatePulseBriefing(news.slice(0, 15), "Global", "All").then(setBriefing);
-    }
+
+      if (filteredNews.length > 0) {
+        const data = await generatePulseBriefing(filteredNews, toolLabel, catLabel);
+        setBriefing(data);
+      } else if (news.length > 0) {
+        const data = await generatePulseBriefing(news.slice(0, 15), "Global", "All");
+        setBriefing(data);
+      }
+      setIsBriefingLoading(false);
+    };
+
+    triggerBriefing();
   }, [activeTool, activeCategory, filteredNews, news]);
 
   useEffect(() => { if (news.length === 0) loadNews(); }, []);
@@ -207,14 +222,32 @@ const App: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto custom-scrollbar bg-transparent select-text">
           <div className="w-full px-6 py-8">
-            {briefing.length > 0 && !loading && (
-              <div className="mb-10 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-6 shadow-xl dark:shadow-2xl animate-in fade-in slide-in-from-top-4 duration-500">
-                <div className="flex items-center justify-between mb-8 border-b border-[var(--border)] pb-4">
-                  <p className="font-sans text-[11px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-widest">
-                    Vibe Briefing: {activeTool !== 'All Tools' ? activeTool : 'Ecosystem'} — Context: {activeCategory}
-                  </p>
+            
+            {/* PERSISTENT BRIEFING SECTION */}
+            <div className="mb-10 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-6 shadow-xl dark:shadow-2xl min-h-[180px] flex flex-col justify-center">
+              <div className="flex items-center justify-between mb-8 border-b border-[var(--border)] pb-4">
+                <p className="font-sans text-[11px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-widest flex items-center gap-3">
+                  <span className="w-1.5 h-1.5 bg-cyan-600 rounded-full animate-pulse" />
+                  Vibe Briefing: {activeTool !== 'All Tools' ? activeTool : 'Ecosystem'} — Context: {activeCategory}
+                </p>
+                {(isBriefingLoading || isRefreshing) && (
+                  <span className="text-[10px] font-bold text-cyan-600 uppercase tracking-tighter animate-pulse">
+                    Synthesizing Intelligence...
+                  </span>
+                )}
+              </div>
+
+              {isBriefingLoading || isRefreshing ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-12 animate-pulse">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="space-y-4">
+                      <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded w-1/2" />
+                      <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded w-full" />
+                    </div>
+                  ))}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+              ) : briefing.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-12 animate-in fade-in duration-500">
                   {briefing.map((item, idx) => (
                     <div key={idx} className="relative group">
                       <div className="flex items-center gap-2 mb-3">
@@ -229,11 +262,17 @@ const App: React.FC = () => {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="flex flex-col items-center justify-center py-4 text-center">
+                  <p className="text-slate-400 dark:text-slate-500 text-[12px] font-medium italic">
+                    {loading ? 'Waiting for initial sync...' : 'No signals for this specific filter pair. Expand search?'}
+                  </p>
+                </div>
+              )}
+            </div>
 
             {loading ? (
-              <div className="h-[60vh] flex flex-col items-center justify-center">
+              <div className="h-[40vh] flex flex-col items-center justify-center">
                  <div className="w-14 h-14 border-2 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin mb-8" />
                  <p className="font-sans text-[12px] text-slate-500 dark:text-slate-400 font-bold animate-pulse uppercase tracking-[0.2em]">{loadingStatus}</p>
               </div>
