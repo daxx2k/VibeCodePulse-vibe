@@ -18,7 +18,7 @@ function sanitizeUrl(url: string): string {
   // Remove trailing punctuation
   clean = clean.replace(/[.,;!]$/, '');
   
-  // Detect clearly broken/hallucinated segments
+  // Check for common hallucinated placeholders
   if (clean.includes('...') && clean.length < 20) return "";
   if (clean.includes('example.com') || clean.includes('your-url-here')) return "";
 
@@ -56,37 +56,49 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1500): Pr
 }
 
 /**
- * Cross-references parsed items with verified grounding metadata chunks.
+ * STRIC_LINK_PROTOCOL: Cross-references parsed items with verified grounding metadata chunks.
+ * If a link is not verified, we force it to the most relevant verified URI to ensure NO BROKEN LINKS.
  */
 function verifyLinks(items: NewsItem[], groundingChunks: any[]): NewsItem[] {
-  const verifiedUris = groundingChunks
+  const verifiedChunks = groundingChunks
     .filter(c => c.web && c.web.uri)
-    .map(c => c.web.uri);
+    .map(c => ({ uri: c.web.uri, title: (c.web.title || "").toLowerCase() }));
+
+  if (verifiedChunks.length === 0) return items;
 
   return items.map(item => {
-    // If the URL is already in the verified list, it's perfect.
-    if (verifiedUris.includes(item.url)) return item;
+    const itemTitleLower = item.title.toLowerCase();
+    
+    // 1. Check for exact URL match first
+    const exactMatch = verifiedChunks.find(c => c.uri === item.url);
+    if (exactMatch) return item;
 
-    // Otherwise, find the best fuzzy match from verified URIs based on the title or domain
-    const bestMatch = verifiedUris.find(uri => {
-      const uriObj = new URL(uri);
-      const itemUrlObj = item.url.startsWith('http') ? new URL(item.url) : null;
-      
-      // If domains match and title keywords are present in URI, it's likely the real one
-      const sameDomain = itemUrlObj && uriObj.hostname.replace('www.', '') === itemUrlObj.hostname.replace('www.', '');
-      const keywordInUri = item.title.toLowerCase().split(' ').some(word => word.length > 4 && uri.toLowerCase().includes(word));
-      
-      return sameDomain && keywordInUri;
-    });
+    // 2. Fuzzy Title Matching: Find the chunk whose title most resembles the item's title
+    // This is the most robust way to map synthesized news items back to their actual source
+    let bestMatch = verifiedChunks[0];
+    let maxOverlap = 0;
 
-    if (bestMatch) {
-      return { ...item, url: bestMatch, id: generateIdFromUrl(bestMatch) };
+    for (const chunk of verifiedChunks) {
+      const chunkWords = chunk.title.split(/\s+/).filter(w => w.length > 3);
+      const overlap = chunkWords.filter(w => itemTitleLower.includes(w)).length;
+      
+      if (overlap > maxOverlap) {
+        maxOverlap = overlap;
+        bestMatch = chunk;
+      }
     }
 
-    // If no good match and the current URL is suspect (ellipses), 
-    // fall back to the first available relevant grounding chunk
-    if (item.url.includes('...') && verifiedUris.length > 0) {
-       return { ...item, url: verifiedUris[0], id: generateIdFromUrl(verifiedUris[0]) };
+    // 3. Fallback: If we have at least some word overlap, swap the URL. 
+    // Otherwise, use the model's URL but if it contains '...' swap to the first verified link.
+    const isSuspect = item.url.includes('...') || item.url.length < 15;
+    
+    if (maxOverlap > 0 || isSuspect) {
+      return { 
+        ...item, 
+        url: bestMatch.uri, 
+        id: generateIdFromUrl(bestMatch.uri),
+        source: bestMatch.title.length > 30 ? bestMatch.title.substring(0, 30) + '...' : bestMatch.title || item.source
+      };
     }
 
     return item;
@@ -114,9 +126,9 @@ function parseGroundedNews(text: string, groundingChunks: any[]): NewsItem[] {
 
         const url = sanitizeUrl(rawUrl);
 
-        if (title && url) {
+        if (title) {
           rawItems.push({
-            id: generateIdFromUrl(url),
+            id: generateIdFromUrl(url || title),
             title: title.replace(/^[#\s*\-•]+/, ''),
             snippet: snippet,
             source: source,
@@ -131,7 +143,7 @@ function parseGroundedNews(text: string, groundingChunks: any[]): NewsItem[] {
     }
   }
 
-  // Verify and fix links using grounding metadata
+  // FORCE VERIFICATION: Swap hallucinated links for real verified search URIs
   return verifyLinks(rawItems, groundingChunks);
 }
 
@@ -144,10 +156,10 @@ export async function fetchAIDevNews(targetTool?: string, targetCategory?: strin
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Search for community updates from the last 6 months ${toolQuery}. 
-      ${isTargeted ? 'DEEP SYNC: prioritize niche social threads.' : 'General ecosystem sync.'}
+      ${isTargeted ? 'DEEP SYNC: prioritize niche social threads and bug reports.' : 'General ecosystem sync.'}
       ${catQuery}.
       
-      CRITICAL: For every [ITEM], ensure you use the EXACT, COMPLETE URL from the search result sources. NO TRUNCATION.
+      CRITICAL INSTRUCTION: You MUST use the exact titles and verbatim URLs found in the Google Search results. DO NOT truncate URLs with "...". If you cannot find a specific URL, provide the closest possible match from the search citations.
       
       FORMAT:
       [ITEM] Title >>> Snippet >>> Source >>> Platform >>> FULL_VERBATIM_URL >>> Category >>> Tool Name >>> ISO Date`,
@@ -173,7 +185,7 @@ export async function generatePulseBriefing(items: NewsItem[], toolContext: stri
     
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Context: ${toolContext} (${categoryContext}). Signals:\n${contextStr}\n\nSummarize into 3 points. Link to a signal ID.
+      contents: `Context: ${toolContext} (${categoryContext}). Signals:\n${contextStr}\n\nSummarize into 3 points. Each point MUST reference a signal ID from the list above.
       
       FORMAT:
       PULSE || Headline || Insight || ID || (Optional: alert)`,
@@ -188,6 +200,7 @@ export async function generatePulseBriefing(items: NewsItem[], toolContext: stri
         if (parts.length >= 4) {
           const rawId = parts[3].replace('ID:', '').trim();
           const signalIdx = parseInt(rawId);
+          // Map index back to the verified news item URL
           const sourceUrl = !isNaN(signalIdx) && items[signalIdx] ? items[signalIdx].url : undefined;
 
           results.push({
@@ -249,9 +262,12 @@ export async function generateDeepDive(item: NewsItem): Promise<string> {
 
 export async function fetchArticleReadability(item: NewsItem): Promise<{ content: string; sources: GroundingSource[] }> {
   return withRetry(async () => {
+    // Only perform readability if the URL is somewhat sane
+    if (!item.url || !item.url.startsWith('http')) return { content: "Original source URI malformed.", sources: [] };
+
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Summarize technical takeaways from ${item.url}. Focus on developer impact. Markdown.`,
+      contents: `Summarize technical takeaways from the content at this URI: ${item.url}. Focus on developer impact. Use Markdown.`,
       config: { tools: [{ googleSearch: {} }] }
     });
 
