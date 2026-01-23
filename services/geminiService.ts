@@ -30,6 +30,23 @@ function sanitizeUrl(url: string): string {
 }
 
 /**
+ * Prevent future date hallucinations by capping at today.
+ */
+function sanitizeDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    const now = new Date();
+    // If invalid date or in the future, return current date
+    if (isNaN(d.getTime()) || d > now) {
+      return now.toISOString();
+    }
+    return d.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
+/**
  * Deterministic ID generation
  */
 function generateIdFromUrl(url: string): string {
@@ -56,9 +73,9 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1500): Pr
 }
 
 /**
- * VERIFIED_URI_MAPPER: 
- * This is the most critical part. It takes the search chunks directly from the Google Search Engine 
- * and maps them back to the news items. We favor the search engine's URI over the model's text.
+ * VERIFIED_LINK_PROTOCOL: 
+ * Prevents 404s by forcing news items to use verified URIs from the search grounding.
+ * If the model synthesizes a URL that doesn't exist in the search index, we swap it.
  */
 function verifyLinks(items: NewsItem[], groundingChunks: any[]): NewsItem[] {
   const verifiedChunks = groundingChunks
@@ -70,11 +87,14 @@ function verifyLinks(items: NewsItem[], groundingChunks: any[]): NewsItem[] {
   return items.map(item => {
     const itemTitleLower = item.title.toLowerCase();
     
-    // Exact URL check
+    // 1. Exact match check (if the model actually got it right)
     const exactMatch = verifiedChunks.find(c => c.uri === item.url);
     if (exactMatch) return item;
 
-    // Rank verified chunks by title similarity
+    // 2. Strict Grounding Check:
+    // If the model provides a URL that isn't in our grounding metadata, 
+    // it's highly likely to be a hallucinated "guess" URL (like the Bolt 100k example).
+    // We fuzzy match the title against verified results to find the real link.
     let bestMatch = verifiedChunks[0];
     let maxOverlap = 0;
 
@@ -88,16 +108,16 @@ function verifyLinks(items: NewsItem[], groundingChunks: any[]): NewsItem[] {
       }
     }
 
-    // If the model gave a truncated/broken URL, we FORCE it to use the best match from Google's verified list.
-    const isSuspect = item.url.includes('...') || item.url.length < 15 || !item.url.startsWith('http');
+    // Force swap if the URL looks suspicious or isn't in the verified set
+    const isSuspect = item.url.includes('...') || item.url.length < 20 || !item.url.includes(item.source.toLowerCase().split(' ')[0]);
     
     if (maxOverlap > 0 || isSuspect) {
       return { 
         ...item, 
         url: bestMatch.uri, 
         id: generateIdFromUrl(bestMatch.uri),
-        // Use the actual title from the source if ours is weak
-        source: item.source === "Intel Feed" && bestMatch.title ? bestMatch.title.split('-')[0].trim() : item.source
+        // Update source and title if the verified chunk is a better source
+        source: bestMatch.title.length < 30 ? bestMatch.title : item.source
       };
     }
 
@@ -122,9 +142,10 @@ function parseGroundedNews(text: string, groundingChunks: any[]): NewsItem[] {
         const rawUrl = parts[4];
         const category = (parts[5]?.toLowerCase() as any) || 'community';
         const tool = (parts[6] as any) || 'General AI';
-        const date = parts[7] || new Date().toISOString();
+        const rawDate = parts[7];
 
         const url = sanitizeUrl(rawUrl);
+        const date = sanitizeDate(rawDate);
 
         if (title) {
           rawItems.push({
@@ -148,23 +169,21 @@ function parseGroundedNews(text: string, groundingChunks: any[]): NewsItem[] {
 
 export async function fetchAIDevNews(targetTool?: string, targetCategory?: string): Promise<{ items: NewsItem[], sources: GroundingSource[] }> {
   return withRetry(async () => {
+    const today = new Date().toISOString().split('T')[0];
     const isTargeted = (targetTool && targetTool !== 'All Tools') || (targetCategory && targetCategory !== 'All');
     const toolQuery = (targetTool && targetTool !== 'All Tools') ? `specifically for "${targetTool}"` : `the entire AI coding ecosystem ("Claude Code", "Cursor", "Aider", "Windsurf", "Bolt", "v0")`;
     
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Perform an exhaustive live search for ALL news, social updates, GitHub releases, and technical blogs from the last 6 months regarding ${toolQuery}.
+      contents: `Search Context: Today is ${today}. Perform a live search for news from the last 6 months regarding ${toolQuery}.
       
-      WIDE NET: Include LinkedIn, Mastodon, X, Reddit, Hacker News, Official Anthropic/OpenAI/Cursor blogs, and niche technical tutorials.
-      
-      FOR EACH SIGNAL FOUND:
-      1. Capture the exact title.
-      2. Provide a 1-sentence technical snippet.
-      3. Identify the specific source/platform.
-      4. MOST IMPORTANT: Provide the COMPLETE, VERBATIM URL. NO TRUNCATION.
+      STRICT REQUIREMENT: 
+      1. Dates MUST be in the past. Do not hallucinate future years like 2026.
+      2. URLs MUST be real and verbatim from the search results. If you cannot find a direct URL, use the main blog/source URI.
+      3. Focus on "Claude Code" and "Bolt" updates.
       
       FORMAT:
-      [ITEM] Title >>> Snippet >>> Source Name >>> Platform Type >>> FULL_URL >>> Category >>> Tool Name >>> ISO_DATE`,
+      [ITEM] Title >>> Snippet >>> Source Name >>> Platform Type >>> FULL_VERBATIM_URL >>> Category >>> Tool Name >>> ISO_DATE`,
       config: { tools: [{ googleSearch: {} }] },
     });
 
@@ -179,7 +198,6 @@ export async function fetchAIDevNews(targetTool?: string, targetCategory?: strin
   });
 }
 
-// Rest of the service remains unchanged...
 export async function generatePulseBriefing(items: NewsItem[], toolContext: string, categoryContext: string): Promise<{ title: string; content: string; url?: string; alert?: boolean }[]> {
   if (items.length === 0) return [];
   return withRetry(async () => {
