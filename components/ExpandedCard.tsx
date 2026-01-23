@@ -127,7 +127,12 @@ const ExpandedCard: React.FC<ExpandedCardProps> = ({ item, onClose, isFavorite, 
 
               <div className="flex items-center gap-4 mb-10 p-4 bg-slate-50 dark:bg-slate-900/50 border border-[var(--border)] rounded-lg">
                 <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest font-sans">Source:</div>
-                <div className="text-sm font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wide">{item.source}</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wide flex items-center gap-2">
+                  {item.source}
+                  <svg className="w-3.5 h-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                </div>
               </div>
 
               <div className="space-y-10">
@@ -206,8 +211,11 @@ const ExpandedCard: React.FC<ExpandedCardProps> = ({ item, onClose, isFavorite, 
               </button>
             </div>
 
-            <a href={item.url} target="_blank" rel="noopener noreferrer" className="px-8 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-[11px] font-bold uppercase tracking-widest transition-all shadow-lg shadow-cyan-600/20 active:scale-95">
-              Visit Original Site
+            <a href={item.url} target="_blank" rel="noopener noreferrer" className="px-8 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-[11px] font-bold uppercase tracking-widest transition-all shadow-lg shadow-cyan-600/20 active:scale-95 flex items-center gap-2">
+              <span>Source Signal</span>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
             </a>
           </div>
         )}
