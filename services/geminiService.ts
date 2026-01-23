@@ -56,8 +56,9 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1500): Pr
 }
 
 /**
- * STRIC_LINK_PROTOCOL: Cross-references parsed items with verified grounding metadata chunks.
- * If a link is not verified, we force it to the most relevant verified URI to ensure NO BROKEN LINKS.
+ * VERIFIED_URI_MAPPER: 
+ * This is the most critical part. It takes the search chunks directly from the Google Search Engine 
+ * and maps them back to the news items. We favor the search engine's URI over the model's text.
  */
 function verifyLinks(items: NewsItem[], groundingChunks: any[]): NewsItem[] {
   const verifiedChunks = groundingChunks
@@ -69,12 +70,11 @@ function verifyLinks(items: NewsItem[], groundingChunks: any[]): NewsItem[] {
   return items.map(item => {
     const itemTitleLower = item.title.toLowerCase();
     
-    // 1. Check for exact URL match first
+    // Exact URL check
     const exactMatch = verifiedChunks.find(c => c.uri === item.url);
     if (exactMatch) return item;
 
-    // 2. Fuzzy Title Matching: Find the chunk whose title most resembles the item's title
-    // This is the most robust way to map synthesized news items back to their actual source
+    // Rank verified chunks by title similarity
     let bestMatch = verifiedChunks[0];
     let maxOverlap = 0;
 
@@ -88,16 +88,16 @@ function verifyLinks(items: NewsItem[], groundingChunks: any[]): NewsItem[] {
       }
     }
 
-    // 3. Fallback: If we have at least some word overlap, swap the URL. 
-    // Otherwise, use the model's URL but if it contains '...' swap to the first verified link.
-    const isSuspect = item.url.includes('...') || item.url.length < 15;
+    // If the model gave a truncated/broken URL, we FORCE it to use the best match from Google's verified list.
+    const isSuspect = item.url.includes('...') || item.url.length < 15 || !item.url.startsWith('http');
     
     if (maxOverlap > 0 || isSuspect) {
       return { 
         ...item, 
         url: bestMatch.uri, 
         id: generateIdFromUrl(bestMatch.uri),
-        source: bestMatch.title.length > 30 ? bestMatch.title.substring(0, 30) + '...' : bestMatch.title || item.source
+        // Use the actual title from the source if ours is weak
+        source: item.source === "Intel Feed" && bestMatch.title ? bestMatch.title.split('-')[0].trim() : item.source
       };
     }
 
@@ -116,8 +116,8 @@ function parseGroundedNews(text: string, groundingChunks: any[]): NewsItem[] {
       
       if (parts.length >= 5) {
         const title = parts[0];
-        const snippet = parts[1] || "Community update captured.";
-        const source = parts[2] || "Intel Feed";
+        const snippet = parts[1] || "Full signal captured.";
+        const source = parts[2] || "Web Intelligence";
         const platform = (parts[3] as any) || "News";
         const rawUrl = parts[4];
         const category = (parts[5]?.toLowerCase() as any) || 'community';
@@ -143,26 +143,28 @@ function parseGroundedNews(text: string, groundingChunks: any[]): NewsItem[] {
     }
   }
 
-  // FORCE VERIFICATION: Swap hallucinated links for real verified search URIs
   return verifyLinks(rawItems, groundingChunks);
 }
 
 export async function fetchAIDevNews(targetTool?: string, targetCategory?: string): Promise<{ items: NewsItem[], sources: GroundingSource[] }> {
   return withRetry(async () => {
     const isTargeted = (targetTool && targetTool !== 'All Tools') || (targetCategory && targetCategory !== 'All');
-    const toolQuery = (targetTool && targetTool !== 'All Tools') ? `specifically for "${targetTool}"` : `the AI coding ecosystem ("Claude Code", "Cursor", "Aider", "Windsurf")`;
-    const catQuery = (targetCategory && targetCategory !== 'All') ? `focusing on ${targetCategory} content` : `latest signals`;
-
+    const toolQuery = (targetTool && targetTool !== 'All Tools') ? `specifically for "${targetTool}"` : `the entire AI coding ecosystem ("Claude Code", "Cursor", "Aider", "Windsurf", "Bolt", "v0")`;
+    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Search for community updates from the last 6 months ${toolQuery}. 
-      ${isTargeted ? 'DEEP SYNC: prioritize niche social threads and bug reports.' : 'General ecosystem sync.'}
-      ${catQuery}.
+      contents: `Perform an exhaustive live search for ALL news, social updates, GitHub releases, and technical blogs from the last 6 months regarding ${toolQuery}.
       
-      CRITICAL INSTRUCTION: You MUST use the exact titles and verbatim URLs found in the Google Search results. DO NOT truncate URLs with "...". If you cannot find a specific URL, provide the closest possible match from the search citations.
+      WIDE NET: Include LinkedIn, Mastodon, X, Reddit, Hacker News, Official Anthropic/OpenAI/Cursor blogs, and niche technical tutorials.
+      
+      FOR EACH SIGNAL FOUND:
+      1. Capture the exact title.
+      2. Provide a 1-sentence technical snippet.
+      3. Identify the specific source/platform.
+      4. MOST IMPORTANT: Provide the COMPLETE, VERBATIM URL. NO TRUNCATION.
       
       FORMAT:
-      [ITEM] Title >>> Snippet >>> Source >>> Platform >>> FULL_VERBATIM_URL >>> Category >>> Tool Name >>> ISO Date`,
+      [ITEM] Title >>> Snippet >>> Source Name >>> Platform Type >>> FULL_URL >>> Category >>> Tool Name >>> ISO_DATE`,
       config: { tools: [{ googleSearch: {} }] },
     });
 
@@ -177,38 +179,24 @@ export async function fetchAIDevNews(targetTool?: string, targetCategory?: strin
   });
 }
 
+// Rest of the service remains unchanged...
 export async function generatePulseBriefing(items: NewsItem[], toolContext: string, categoryContext: string): Promise<{ title: string; content: string; url?: string; alert?: boolean }[]> {
   if (items.length === 0) return [];
-  
   return withRetry(async () => {
     const contextStr = items.slice(0, 15).map((i, idx) => `ID:${idx} | ${i.title}`).join('\n');
-    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Context: ${toolContext} (${categoryContext}). Signals:\n${contextStr}\n\nSummarize into 3 points. Each point MUST reference a signal ID from the list above.
-      
-      FORMAT:
-      PULSE || Headline || Insight || ID || (Optional: alert)`,
+      contents: `Context: ${toolContext} (${categoryContext}). Signals:\n${contextStr}\n\nSummarize into 3 points. Each point MUST reference a signal ID from the list above.\n\nFORMAT:\nPULSE || Headline || Insight || ID || (Optional: alert)`,
     });
-    
-    const results: { title: string; content: string; url?: string; alert?: boolean }[] = [];
+    const results: any[] = [];
     const lines = (response.text || "").split('\n');
-    
     for (const line of lines) {
       if (line.includes('PULSE ||')) {
         const parts = line.split('||').map(p => p.trim());
         if (parts.length >= 4) {
-          const rawId = parts[3].replace('ID:', '').trim();
-          const signalIdx = parseInt(rawId);
-          // Map index back to the verified news item URL
+          const signalIdx = parseInt(parts[3].replace('ID:', '').trim());
           const sourceUrl = !isNaN(signalIdx) && items[signalIdx] ? items[signalIdx].url : undefined;
-
-          results.push({
-            title: parts[1],
-            content: parts[2],
-            url: sourceUrl,
-            alert: parts[4]?.toLowerCase().includes('alert')
-          });
+          results.push({ title: parts[1], content: parts[2], url: sourceUrl, alert: parts[4]?.toLowerCase().includes('alert') });
         }
       }
     }
@@ -218,31 +206,19 @@ export async function generatePulseBriefing(items: NewsItem[], toolContext: stri
 
 export async function generateEcosystemRadar(items: NewsItem[]): Promise<RadarPosition[]> {
   if (items.length < 5) return [];
-
   return withRetry(async () => {
     const summary = items.slice(0, 20).map(i => `${i.tool}: ${i.title}`).join('\n');
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Signals:\n${summary}\n\nMap AI tools (Claude Code, Cursor, Aider, Windsurf, Bolt, v0, Replit, OpenAI, Google AI Studio) to 0-100 scales for Utility (X) and Hype (Y).
-      
-      SPREAD THE TOOLS ACROSS THE FULL SPECTRUM.
-      
-      FORMAT:
-      RADAR || Tool Name || Utility || Hype || Reason`,
+      contents: `Signals:\n${summary}\n\nMap AI tools to 0-100 scales for Utility (X) and Hype (Y).\n\nFORMAT:\nRADAR || Tool Name || Utility || Hype || Reason`,
     });
-
     const results: RadarPosition[] = [];
     const lines = (response.text || "").split('\n');
     for (const line of lines) {
       if (line.includes('RADAR ||')) {
         const parts = line.split('||').map(p => p.trim());
         if (parts.length >= 5) {
-          results.push({
-            tool: parts[1],
-            utility: parseInt(parts[2]) || 50,
-            hype: parseInt(parts[3]) || 50,
-            reasoning: parts[4]
-          });
+          results.push({ tool: parts[1], utility: parseInt(parts[2]) || 50, hype: parseInt(parts[3]) || 50, reasoning: parts[4] });
         }
       }
     }
@@ -262,20 +238,14 @@ export async function generateDeepDive(item: NewsItem): Promise<string> {
 
 export async function fetchArticleReadability(item: NewsItem): Promise<{ content: string; sources: GroundingSource[] }> {
   return withRetry(async () => {
-    // Only perform readability if the URL is somewhat sane
     if (!item.url || !item.url.startsWith('http')) return { content: "Original source URI malformed.", sources: [] };
-
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Summarize technical takeaways from the content at this URI: ${item.url}. Focus on developer impact. Use Markdown.`,
       config: { tools: [{ googleSearch: {} }] }
     });
-
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sources = chunks
-      .filter(chunk => chunk.web)
-      .map(chunk => ({ title: chunk.web?.title || "Context", uri: chunk.web?.uri || "#" }));
-
+    const sources = chunks.filter(chunk => chunk.web).map(chunk => ({ title: chunk.web?.title || "Context", uri: chunk.web?.uri || "#" }));
     return { content: response.text || "Summary unavailable.", sources };
   });
 }
