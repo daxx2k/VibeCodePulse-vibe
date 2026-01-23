@@ -17,6 +17,13 @@ export interface GroundingSource {
   uri: string;
 }
 
+export interface RadarPosition {
+  tool: string;
+  hype: number; // 0-100
+  utility: number; // 0-100
+  reasoning: string;
+}
+
 export type Category = 'All' | 'Official' | 'Social' | 'Tutorials' | 'News' | 'Favorites';
 export type ToolType = 'All Tools' | 'Claude Code' | 'Cursor' | 'Aider' | 'Windsurf' | 'Bolt' | 'v0' | 'Google AI Studio' | 'OpenAI' | 'Replit';
 export type PlatformType = 'All Platforms' | 'X' | 'Reddit' | 'GitHub' | 'HackerNews' | 'Discord' | 'Meta' | 'LinkedIn' | 'YouTube';

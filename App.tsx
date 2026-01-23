@@ -4,8 +4,9 @@ import Sidebar from './components/Sidebar';
 import NewsCard from './components/NewsCard';
 import ExpandedCard from './components/ExpandedCard';
 import HowItWorks from './components/HowItWorks';
-import { fetchAIDevNews, generatePulseBriefing, explainWord } from './services/geminiService';
-import { NewsItem, Category, Theme, TimeFilter, ToolType, PlatformType, GroundingSource } from './types';
+import EcosystemRadar from './components/EcosystemRadar';
+import { fetchAIDevNews, generatePulseBriefing, explainWord, generateEcosystemRadar } from './services/geminiService';
+import { NewsItem, Category, Theme, TimeFilter, ToolType, PlatformType, GroundingSource, RadarPosition } from './types';
 
 const App: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<Category>(() => (localStorage.getItem('pulse-pref-cat') as Category) || 'All');
@@ -26,6 +27,12 @@ const App: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<NewsItem | null>(null);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+  
+  // Radar States
+  const [showRadar, setShowRadar] = useState(false);
+  const [radarPositions, setRadarPositions] = useState<RadarPosition[]>([]);
+  const [isRadarLoading, setIsRadarLoading] = useState(false);
+
   const [briefing, setBriefing] = useState<{ title: string; content: string; url?: string; alert?: boolean }[]>([]);
   const [isBriefingLoading, setIsBriefingLoading] = useState(false);
   
@@ -56,7 +63,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleMouseUp = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      // Don't clear if clicking inside the tooltip or a button
       if (target.closest('.ai-tooltip') || target.closest('button')) return;
 
       const sel = window.getSelection();
@@ -164,6 +170,22 @@ const App: React.FC = () => {
     triggerBriefing();
   }, [activeTool, activeCategory, filteredNews, news]);
 
+  // Fetch Radar positions
+  const toggleRadar = async () => {
+    if (!showRadar) {
+      setShowRadar(true);
+      if (radarPositions.length === 0 || isRefreshing) {
+        setIsRadarLoading(true);
+        const sourceItems = filteredNews.length > 10 ? filteredNews : news;
+        const positions = await generateEcosystemRadar(sourceItems);
+        setRadarPositions(positions);
+        setIsRadarLoading(false);
+      }
+    } else {
+      setShowRadar(false);
+    }
+  };
+
   useEffect(() => { if (news.length === 0) loadNews(); }, []);
 
   const handleExplain = async (text: string) => {
@@ -188,6 +210,7 @@ const App: React.FC = () => {
         activePlatform={activePlatform} setActivePlatform={setActivePlatform}
         theme={theme} setTheme={setTheme}
         onHowItWorks={() => setShowHowItWorks(true)}
+        onShowRadar={toggleRadar}
       />
 
       <main className="flex-1 flex flex-col h-full relative overflow-hidden bg-transparent z-10">
@@ -347,6 +370,8 @@ const App: React.FC = () => {
       )}
 
       {showHowItWorks && <HowItWorks onClose={() => setShowHowItWorks(false)} />}
+      
+      {showRadar && <EcosystemRadar positions={radarPositions} loading={isRadarLoading} onClose={() => setShowRadar(false)} />}
 
       {/* REFINED AI INTELLIGENCE TOOLTIP */}
       {selection && (
